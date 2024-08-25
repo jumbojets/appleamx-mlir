@@ -46,7 +46,7 @@ config.test_exec_root = os.path.join(config.appleamx_obj_root, "test")
 config.appleamx_tools_dir = os.path.join(config.appleamx_obj_root, "bin")
 config.appleamx_libs_dir = os.path.join(config.appleamx_obj_root, "lib")
 
-config.substitutions.append(("%sappleamx_libs", config.appleamx_libs_dir))
+config.substitutions.append(("%appleamx_libs", config.appleamx_libs_dir))
 
 # Tweak the PATH to include the tools dir.
 llvm_config.with_environment("PATH", config.llvm_tools_dir, append_path=True)

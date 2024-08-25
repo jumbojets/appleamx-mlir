@@ -22,11 +22,10 @@ ninja
 ninja check-mlir
 ```
 
-#### 2. Build AppleAMX-MLIR
+#### 2. Build and test AppleAMX-MLIR
 
 ```bash
-mkdir build
-cd build
+mkdir build && cd build
 cmake -G Ninja .. \
   -DMLIR_DIR=$PWD/../llvm-project/build/lib/cmake/mlir \
   -DCLANG_DIR=$PWD/../llvm-project/build/lib/cmake/clang \
@@ -34,14 +33,5 @@ cmake -G Ninja .. \
   -DLLVM_ENABLE_ASSERTIONS=ON \
   -DCMAKE_BUILD_TYPE=DEBUG
 ninja
-ninja check-appleamx-opt
-```
-
-```bash
-mkdir build && cd build
-cmake -G Ninja .. \
-  -DMLIR_DIR=$PWD/../llvm-project/build/lib/cmake/mlir \
-  -DCLANG_DIR=$PWD/../llvm-project/build/lib/cmake/clang \
-  -DCMAKE_BUILD_TYPE=DEBUG
-cmake --build . --target check-appleamx
+ninja check-applemax
 ```
