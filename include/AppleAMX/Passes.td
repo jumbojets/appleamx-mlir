@@ -16,21 +16,30 @@ def AppleAMXRaiseAffineMatmul: Pass<"appleamx-raise-affine-matmul", "::mlir::Mod
   let description = [{
     Converts nested affine for loops to matmuls.
     ```
-    func.func @matmul(%A: memref<100x100xf32>, %B: memref<100x100xf32>, %C: memref<100x100xf32>) {
-      affine.for %i = 0 to 100 {
-        affine.for %j = 0 to 100 {
-          affine.for %k = 0 to 100 {
-            %0 = affine.load %A[%i, %k] : memref<100x100xf32>
-            %1 = affine.load %B[%k, %j] : memref<100x100xf32>
-            %2 = arith.mulf %0, %1 : f32
-            affine.store %2, %C[%i, %j] : memref<100x100xf32>
+    func.func @matmul(%A: memref<128x64xf16>, %B: memref<64x128xf16>, %C: memref<128x128xf16>) {
+      affine.for %i = 0 to 128 {
+        affine.for %j = 0 to 128 {
+          affine.for %k = 0 to 64 {
+            %a = memref.load %A[%i, %k] : memref<128x64xf16>
+            %b = memref.load %B[%k, %j] : memref<64x128xf16>
+            %c = memref.load %C[%i, %j] : memref<128x128xf16>
+            %mul = arith.mulf %a, %b : f16
+            %add = arith.addf %c, %mul : f16
+            memref.store %add, %C[%i, %j] : memref<128x128xf16>
           }
         }
-      }
+      } {appleamx.matmul.transform}
+      return
     }
     // Gets transformed to:
-    func.func @matmul(%A: memref<100x100xf32>, %B: memref<100x100xf32>, %C: memref<100x100xf32>) {
-      %0 = appleamx.matmul %A, %B : memref<100x100xf32>, memref<100x100xf32>, memref<100x100xf32>
+    func.func @matmul(%arg0: memref<128x64xf16>, %arg1: memref<64x128xf16>, %arg2: memref<128x128xf16>) {
+      %0 = bufferization.to_tensor %arg0 : memref<128x64xf16>
+      %1 = bufferization.to_tensor %arg1 : memref<64x128xf16>
+      %2 = bufferization.to_tensor %arg2 : memref<128x128xf16>
+      %3 = linalg.matmul {appleamx.created} ins(%0, %1 : tensor<128x64xf16>, tensor<64x128xf16>) outs(%2 : tensor<128x128xf16>) -> tensor<128x128xf16>
+      %4 = bufferization.to_memref %3 : memref<128x128xf16>
+      memref.copy %4, %arg2 : memref<128x128xf16> to memref<128x128xf16>
+      return
     }
     ```
   }];
@@ -40,6 +49,19 @@ def AppleAMXRaiseAffineMatmul: Pass<"appleamx-raise-affine-matmul", "::mlir::Mod
     "::mlir::tensor::TensorDialect",
     "::mlir::memref::MemRefDialect",
     "::mlir::bufferization::BufferizationDialect"
+  ];
+}
+
+def AppleAMXTileMatmul: Pass<"appleamx-tile-matmul", "::mlir::func::FuncOp"> {
+  let summary = "Tiles matmuls";
+  let description = [{
+    Tiles matmuls.
+  }];
+
+  let dependentDialects = [
+    "mlir::func::FuncDialect",
+    "mlir::linalg::LinalgDialect",
+    "mlir::scf::SCFDialect"
   ];
 }
 

@@ -1,4 +1,4 @@
-//===- Passes.cpp - AppleAMX passes -----------------------------*- C++ -*-===//
+//===-- Passes.cpp - AppleAMX passes -----------------------------*- C++ -*-===//
 //
 // This file is licensed under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -9,6 +9,7 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
@@ -21,8 +22,8 @@
 #include "AppleAMX/Passes.h"
 
 namespace mlir::appleamx {
-#define GEN_PASS_DEF_APPLEAMXSWITCHBARFOO
 #define GEN_PASS_DEF_APPLEAMXRAISEAFFINEMATMUL
+#define GEN_PASS_DEF_APPLEAMXTILEMATMUL
 #include "AppleAMX/Passes.h.inc"
 
 namespace {
@@ -62,6 +63,7 @@ public:
       ValueRange{ATensor, BTensor},
       ValueRange{CTensor}
     );
+    matmulOp->setAttr("appleamx.created", rewriter.getUnitAttr());
 
     Value result = rewriter.create<bufferization::ToMemrefOp>(op.getLoc(), CType, matmulOp.getResult(0));
 
@@ -162,6 +164,25 @@ public:
     FrozenRewritePatternSet patternSet(std::move(patterns));
     if (failed(applyPatternsAndFoldGreedily(getOperation(), patternSet)))
       signalPassFailure();
+  }
+};
+
+class AppleAMXTileMatmul
+    : public impl::AppleAMXTileMatmulBase<AppleAMXTileMatmul> {
+public:
+  using impl::AppleAMXTileMatmulBase<AppleAMXTileMatmul>::AppleAMXTileMatmulBase;
+  void runOnOperation() override {
+    mlir::func::FuncOp func = getOperation();
+    mlir::PatternRewriter rewriter(func.getContext());
+    func.walk([&](mlir::linalg::MatmulOp matmulOp) {
+      mlir::linalg::LinalgTilingOptions tilingOptions;
+      tilingOptions.setTileSizes({32, 32, 32});
+      if (succeeded(linalg::tileLinalgOp(rewriter, matmulOp, tilingOptions))) {
+        // The op is replaced inside tileLinalgOp on success
+        return WalkResult::advance();
+      }
+      return WalkResult::advance();
+    });
   }
 };
 } // namespace

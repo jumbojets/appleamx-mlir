@@ -23,7 +23,8 @@ int main(int argc, char **argv) {
   registry.insert<mlir::appleamx::AppleAMXDialect,
                   mlir::arith::ArithDialect, mlir::func::FuncDialect,
                   mlir::linalg::LinalgDialect, mlir::memref::MemRefDialect,
-                  mlir::affine::AffineDialect>();
+                  mlir::affine::AffineDialect, mlir::scf::SCFDialect,
+                  mlir::bufferization::BufferizationDialect>();
 
   return mlir::asMainReturnCode(
       mlir::MlirOptMain(argc, argv, "AppleAMX optimizer driver\n", registry));
