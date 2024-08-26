@@ -18,15 +18,12 @@
 int main(int argc, char **argv) {
   mlir::registerAllPasses();
   mlir::appleamx::registerPasses();
-  // TODO: Register appleamx passes here.
 
   mlir::DialectRegistry registry;
   registry.insert<mlir::appleamx::AppleAMXDialect,
-                  mlir::arith::ArithDialect, mlir::func::FuncDialect>();
-  // Add the following to include *all* MLIR Core dialects, or selectively
-  // include what you need like above. You only need to register dialects that
-  // will be *parsed* by the tool, not the one generated
-  // registerAllDialects(registry);
+                  mlir::arith::ArithDialect, mlir::func::FuncDialect,
+                  mlir::linalg::LinalgDialect, mlir::memref::MemRefDialect,
+                  mlir::affine::AffineDialect>();
 
   return mlir::asMainReturnCode(
       mlir::MlirOptMain(argc, argv, "AppleAMX optimizer driver\n", registry));

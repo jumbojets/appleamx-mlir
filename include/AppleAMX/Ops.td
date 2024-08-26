@@ -39,4 +39,24 @@ def AppleAMX_FooOp : AppleAMX_Op<"foo", [Pure, SameOperandsAndResultType]> {
     }];
 }
 
+def AppleAMX_LoadX : AppleAMX_Op<"loadx"> {
+    let summary = "Load 64 bytes from memory into the x memory pool";
+    let arguments = (ins AnyMemRef : $source, Index : $index);
+}
+
+def AppleAMX_LoadY : AppleAMX_Op<"loady"> {
+    let summary = "Load 64 bytes from memory into the y memory pool";
+    let arguments = (ins AnyMemRef : $source, Index : $index);
+}
+
+def AppleAMX_StoreZ : AppleAMX_Op<"storez"> {
+    let summary = "Store 64 bytes into memory from the zmemory pool";
+    let arguments = (ins AnyMemRef : $source, Index : $index);
+}
+
+def AppleAMX_FMA16 : AppleAMX_Op<"matrix_fma16"> {
+    let summary = "Perform float16 outer product on 32-length vectors from x and y and accumulate into z";
+    let arguments = (ins Index : $offsetx, Index : $offsety);
+}
+
 #endif // APPLEAMX_OPS

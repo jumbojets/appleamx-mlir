@@ -27,4 +27,10 @@ def AppleAMXSwitchBarFoo: Pass<"appleamx-switch-bar-foo", "::mlir::ModuleOp"> {
   }];
 }
 
+def AppleAMXRaiseAffineMatmul: Pass<"appleamx-raise-affine-matmul", "::mlir::affine::AffineForOp"> {
+  let summary = "Converts nested affine for loops to matmuls";
+  let description = [{
+  }];
+}
+
 #endif // APPLEAMX_PASS 

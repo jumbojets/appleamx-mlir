@@ -1,5 +1,7 @@
 # Apple AMX Support for MLIR
 
+https://github.com/corsix/amx
+
 ### Clone
 
 ```bash
