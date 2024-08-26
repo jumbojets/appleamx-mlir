@@ -31,6 +31,9 @@ public:
   using OpRewritePattern<affine::AffineForOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(affine::AffineForOp op,
                                 PatternRewriter &rewriter) const final {
+    if (!op->hasAttr("appleamx.matmul.transform"))
+      return failure();
+
     auto loopNest = detectMatmulPattern(op);
     if (!loopNest)
       return failure();
@@ -107,10 +110,6 @@ private:
   }
 
   std::tuple<Value, Value, Value> extractOperands(SmallVector<affine::AffineForOp, 3> &loops) const {
-    // Simplified example for illustration
-    // You would analyze the body of the innermost loop to identify the load, mul, add operations
-    // and extract the corresponding matrices A, B, and C.
-
     Value A, B, C;
 
     Value i = loops[0].getInductionVar();
@@ -120,14 +119,14 @@ private:
     for (auto &op : loops[2].getBody()->getOperations()) {
       if (auto loadOp = dyn_cast<memref::LoadOp>(&op)) {
         // Check if load corresponds to A[i, k] or B[k, j]
-        if (matchesLoadPattern(loadOp, i, k)) {
+        if (matchesLoadStorePattern(loadOp, i, k)) {
           A = loadOp.getMemRef();
-        } else if (matchesLoadPattern(loadOp, k, j)) {
+        } else if (matchesLoadStorePattern(loadOp, k, j)) {
           B = loadOp.getMemRef();
         }
       } else if (auto storeOp = dyn_cast<memref::StoreOp>(&op)) {
         // Check if store corresponds to C[i, j]
-        if (matchesStorePattern(storeOp, i, j)) {
+        if (matchesLoadStorePattern(storeOp, i, j)) {
           C = storeOp.getMemRef();
         }
       }
@@ -135,24 +134,15 @@ private:
 
     // Ensure all operands were found
     if (!A || !B || !C) {
-      return std::make_tuple(Value(), Value(), Value()); // Return empty tuple on failure
+      return std::make_tuple(Value(), Value(), Value());
     }
 
     return std::make_tuple(A, B, C);
   }
 
-  bool matchesLoadPattern(memref::LoadOp loadOp, Value idx1, Value idx2) const {
-    auto indices = loadOp.getIndices();
-    // Ensure there are exactly two indices
-    if (indices.size() != 2) {
-      return false;
-    }
-    // Check that the indices match the expected loop induction variables
-    return indices[0] == idx1 && indices[1] == idx2;
-  }
-
-  bool matchesStorePattern(memref::StoreOp storeOp, Value idx1, Value idx2) const {
-    auto indices = storeOp.getIndices();
+  template <typename T>
+  bool matchesLoadStorePattern(T loadStoreOp, Value idx1, Value idx2) const {
+    auto indices = loadStoreOp.getIndices();
     // Ensure there are exactly two indices
     if (indices.size() != 2) {
       return false;
@@ -167,8 +157,6 @@ class AppleAMXRaiseAffineMatmul
 public:
   using impl::AppleAMXRaiseAffineMatmulBase<AppleAMXRaiseAffineMatmul>::AppleAMXRaiseAffineMatmulBase;
   void runOnOperation() final {
-    getOperation()->emitRemark("Running AppleAMXRaiseAffineMatmul");
-
     RewritePatternSet patterns(&getContext());
     patterns.add<AppleAMXRaiseAffineMatmulRewriter>(&getContext());
     FrozenRewritePatternSet patternSet(std::move(patterns));

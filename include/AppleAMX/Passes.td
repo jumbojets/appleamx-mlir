@@ -11,7 +11,6 @@
 
 include "mlir/Pass/PassBase.td"
 
-// def AppleAMXRaiseAffineMatmul: Pass<"appleamx-raise-affine-matmul", "::mlir::affine::AffineForOp"> {
 def AppleAMXRaiseAffineMatmul: Pass<"appleamx-raise-affine-matmul", "::mlir::ModuleOp"> {
   let summary = "Converts nested affine for loops to matmuls";
   let description = [{
