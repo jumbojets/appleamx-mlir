@@ -1,4 +1,4 @@
-//===- Passes.td - AppleAMX dialect passes -----------------*- tablegen -*-===//
+//===-- Passes.td - AppleAMX dialect passes -----------------*- tablegen -*-===//
 //
 // This file is licensed under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -36,7 +36,12 @@ def AppleAMXRaiseAffineMatmul: Pass<"appleamx-raise-affine-matmul", "::mlir::Mod
     ```
   }];
 
-  let dependentDialects = ["linalg::LinalgDialect"];
+  let dependentDialects = [
+    "::mlir::linalg::LinalgDialect",
+    "::mlir::tensor::TensorDialect",
+    "::mlir::memref::MemRefDialect",
+    "::mlir::bufferization::BufferizationDialect"
+  ];
 }
 
-#endif // APPLEAMX_PASS 
+#endif // APPLEAMX_PASS

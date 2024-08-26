@@ -10,12 +10,13 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Rewrite/FrozenRewritePatternSet.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include <optional>
-#include <iostream>
 
 #include "AppleAMX/Passes.h"
 
@@ -35,11 +36,35 @@ public:
       return failure();
 
     Value A, B, C;
-    int64_t M, N, K; // TODO: figure out how to uses these
+    int64_t M, N, K;
     std::tie(A, B, C, M, N, K) = *loopNest;
 
+    auto AType = mlir::cast<MemRefType>(A.getType());
+    auto BType = mlir::cast<MemRefType>(B.getType());
+    auto CType = mlir::cast<MemRefType>(C.getType());
+    auto elementType = AType.getElementType();
+
+    auto ATensorType = RankedTensorType::get(AType.getShape(), elementType);
+    auto BTensorType = RankedTensorType::get(BType.getShape(), elementType);
+    auto CTensorType = RankedTensorType::get(CType.getShape(), elementType);
+
     rewriter.setInsertionPoint(op);
-    rewriter.replaceOpWithNewOp<linalg::MatmulOp>(op, C.getType(), ValueRange{A, B, C});
+    Value ATensor = rewriter.create<bufferization::ToTensorOp>(op.getLoc(), ATensorType, A);
+    Value BTensor = rewriter.create<bufferization::ToTensorOp>(op.getLoc(), BTensorType, B);
+    Value CTensor = rewriter.create<bufferization::ToTensorOp>(op.getLoc(), CTensorType, C);
+
+    auto matmulOp = rewriter.create<linalg::MatmulOp>(
+      op.getLoc(),
+      TypeRange{CTensorType},
+      ValueRange{ATensor, BTensor},
+      ValueRange{CTensor}
+    );
+
+    Value result = rewriter.create<bufferization::ToMemrefOp>(op.getLoc(), CType, matmulOp.getResult(0));
+
+    rewriter.create<memref::CopyOp>(op.getLoc(), result, C);
+
+    rewriter.eraseOp(op);
 
     return success();
   }
@@ -48,9 +73,6 @@ private:
   using LoopNest = std::tuple<Value, Value, Value, int64_t, int64_t, int64_t>;
 
   std::optional<LoopNest> detectMatmulPattern(affine::AffineForOp rootLoop) const {
-    // if (!isMatmulRootLoop(rootLoop)) {}
-    //   return {};
-      
     auto loops = getNestedLoops(rootLoop);
     if (loops.size() != 3)
       return {};
@@ -65,26 +87,6 @@ private:
       return LoopNest(A, B, C, M, N, K);
 
     return {};
-  }
-
-  bool isMatmulRootLoop(affine::AffineForOp loop) const {
-    // Check for three nested loops
-    if (!loop->hasOneUse() || !isa<affine::AffineForOp>(*loop.getBody()->begin()))
-      return false;
-    auto innerLoop1 = cast<affine::AffineForOp>(loop.getBody()->front());
-    if (!innerLoop1->hasOneUse() || !isa<affine::AffineForOp>(*innerLoop1.getBody()->begin()))
-      return false;
-    auto innerLoop2 = cast<affine::AffineForOp>(innerLoop1.getBody()->front());
-    
-    // Check for matmul operations in the innermost loop
-    for (auto &op : innerLoop2.getBody()->getOperations()) {
-      if (isa<memref::LoadOp>(op) || isa<memref::StoreOp>(op) || 
-          isa<arith::MulFOp>(op) || isa<arith::AddFOp>(op))
-        continue;
-      if (!isa<affine::AffineYieldOp>(op))
-        return false;
-    }
-    return true;
   }
 
   SmallVector<affine::AffineForOp, 3> getNestedLoops(affine::AffineForOp rootLoop) const {
