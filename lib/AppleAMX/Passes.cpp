@@ -15,6 +15,7 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include <optional>
+#include <iostream>
 
 #include "AppleAMX/Passes.h"
 
@@ -24,33 +25,6 @@ namespace mlir::appleamx {
 #include "AppleAMX/Passes.h.inc"
 
 namespace {
-class AppleAMXSwitchBarFooRewriter : public OpRewritePattern<func::FuncOp> {
-public:
-  using OpRewritePattern<func::FuncOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(func::FuncOp op,
-                                PatternRewriter &rewriter) const final {
-    if (op.getSymName() == "bar") {
-      rewriter.modifyOpInPlace(op, [&op]() { op.setSymName("foo"); });
-      return success();
-    }
-    return failure();
-  }
-};
-
-class AppleAMXSwitchBarFoo
-    : public impl::AppleAMXSwitchBarFooBase<AppleAMXSwitchBarFoo> {
-public:
-  using impl::AppleAMXSwitchBarFooBase<
-      AppleAMXSwitchBarFoo>::AppleAMXSwitchBarFooBase;
-  void runOnOperation() final {
-    RewritePatternSet patterns(&getContext());
-    patterns.add<AppleAMXSwitchBarFooRewriter>(&getContext());
-    FrozenRewritePatternSet patternSet(std::move(patterns));
-    if (failed(applyPatternsAndFoldGreedily(getOperation(), patternSet)))
-      signalPassFailure();
-  }
-};
-
 class AppleAMXRaiseAffineMatmulRewriter : public OpRewritePattern<affine::AffineForOp> {
 public:
   using OpRewritePattern<affine::AffineForOp>::OpRewritePattern;
@@ -191,6 +165,8 @@ class AppleAMXRaiseAffineMatmul
 public:
   using impl::AppleAMXRaiseAffineMatmulBase<AppleAMXRaiseAffineMatmul>::AppleAMXRaiseAffineMatmulBase;
   void runOnOperation() final {
+    getOperation()->emitRemark("Running AppleAMXRaiseAffineMatmul");
+
     RewritePatternSet patterns(&getContext());
     patterns.add<AppleAMXRaiseAffineMatmulRewriter>(&getContext());
     FrozenRewritePatternSet patternSet(std::move(patterns));

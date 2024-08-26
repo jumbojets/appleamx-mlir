@@ -11,26 +11,32 @@
 
 include "mlir/Pass/PassBase.td"
 
-def AppleAMXSwitchBarFoo: Pass<"appleamx-switch-bar-foo", "::mlir::ModuleOp"> {
-  let summary = "Switches the name of a FuncOp named `bar` to `foo` and folds.";
-  let description = [{
-    Switches the name of a FuncOp named `bar` to `foo` and folds.
-    ```
-    func.func @bar() {
-      return
-    }
-    // Gets transformed to:
-    func.func @foo() {
-      return
-    }
-    ```
-  }];
-}
-
-def AppleAMXRaiseAffineMatmul: Pass<"appleamx-raise-affine-matmul", "::mlir::affine::AffineForOp"> {
+// def AppleAMXRaiseAffineMatmul: Pass<"appleamx-raise-affine-matmul", "::mlir::affine::AffineForOp"> {
+def AppleAMXRaiseAffineMatmul: Pass<"appleamx-raise-affine-matmul", "::mlir::ModuleOp"> {
   let summary = "Converts nested affine for loops to matmuls";
   let description = [{
+    Converts nested affine for loops to matmuls.
+    ```
+    func.func @matmul(%A: memref<100x100xf32>, %B: memref<100x100xf32>, %C: memref<100x100xf32>) {
+      affine.for %i = 0 to 100 {
+        affine.for %j = 0 to 100 {
+          affine.for %k = 0 to 100 {
+            %0 = affine.load %A[%i, %k] : memref<100x100xf32>
+            %1 = affine.load %B[%k, %j] : memref<100x100xf32>
+            %2 = arith.mulf %0, %1 : f32
+            affine.store %2, %C[%i, %j] : memref<100x100xf32>
+          }
+        }
+      }
+    }
+    // Gets transformed to:
+    func.func @matmul(%A: memref<100x100xf32>, %B: memref<100x100xf32>, %C: memref<100x100xf32>) {
+      %0 = appleamx.matmul %A, %B : memref<100x100xf32>, memref<100x100xf32>, memref<100x100xf32>
+    }
+    ```
   }];
+
+  let dependentDialects = ["linalg::LinalgDialect"];
 }
 
 #endif // APPLEAMX_PASS 
