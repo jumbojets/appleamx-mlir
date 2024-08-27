@@ -36,38 +36,20 @@ public:
     if (!op->hasAttr("appleamx.matmul.transform"))
       return failure();
 
-    auto loopNest = detectMatmulPattern(op);
-    if (!loopNest)
+    auto loops = getNestedLoops(op);
+    if (loops.size() != 3)
       return failure();
-
-    Value A, B, C;
-    int64_t M, N, K;
-    std::tie(A, B, C, M, N, K) = *loopNest;
-
-    auto AType = mlir::cast<MemRefType>(A.getType());
-    auto BType = mlir::cast<MemRefType>(B.getType());
-    auto CType = mlir::cast<MemRefType>(C.getType());
-    auto elementType = AType.getElementType();
-
-    auto ATensorType = RankedTensorType::get(AType.getShape(), elementType);
-    auto BTensorType = RankedTensorType::get(BType.getShape(), elementType);
-    auto CTensorType = RankedTensorType::get(CType.getShape(), elementType);
+    auto [A, B, C] = extractOperands(loops);
 
     rewriter.setInsertionPoint(op);
-    Value ATensor = rewriter.create<bufferization::ToTensorOp>(op.getLoc(), ATensorType, A);
-    Value BTensor = rewriter.create<bufferization::ToTensorOp>(op.getLoc(), BTensorType, B);
-    Value CTensor = rewriter.create<bufferization::ToTensorOp>(op.getLoc(), CTensorType, C);
 
     auto matmulOp = rewriter.create<linalg::MatmulOp>(
       op.getLoc(),
-      TypeRange{CTensorType},
-      ValueRange{ATensor, BTensor},
-      ValueRange{CTensor}
+      TypeRange{},
+      ValueRange{A, B},
+      ValueRange{C}
     );
     matmulOp->setAttr("appleamx.created", rewriter.getUnitAttr());
-
-    Value result = rewriter.create<bufferization::ToMemrefOp>(op.getLoc(), CType, matmulOp.getResult(0));
-    rewriter.create<memref::CopyOp>(op.getLoc(), result, C);
 
     rewriter.eraseOp(op);
 
@@ -76,23 +58,6 @@ public:
 
 private:
   using LoopNest = std::tuple<Value, Value, Value, int64_t, int64_t, int64_t>;
-
-  std::optional<LoopNest> detectMatmulPattern(affine::AffineForOp rootLoop) const {
-    auto loops = getNestedLoops(rootLoop);
-    if (loops.size() != 3)
-      return {};
-      
-    auto [A, B, C] = extractOperands(loops);
-
-    int64_t M = loops[0].getConstantUpperBound();
-    int64_t N = loops[1].getConstantUpperBound();
-    int64_t K = loops[2].getConstantUpperBound();
-
-    if (A && B && C && M > 0 && N > 0 && K > 0)
-      return LoopNest(A, B, C, M, N, K);
-
-    return {};
-  }
 
   SmallVector<affine::AffineForOp, 3> getNestedLoops(affine::AffineForOp rootLoop) const {
     SmallVector<affine::AffineForOp, 3> loops;

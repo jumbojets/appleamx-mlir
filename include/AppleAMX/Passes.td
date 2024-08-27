@@ -32,14 +32,11 @@ def AppleAMXRaiseAffineMatmul: Pass<"appleamx-raise-affine-matmul", "::mlir::Mod
       return
     }
     // Gets transformed to:
-    func.func @matmul(%arg0: memref<128x64xf16>, %arg1: memref<64x128xf16>, %arg2: memref<128x128xf16>) {
-      %0 = bufferization.to_tensor %arg0 : memref<128x64xf16>
-      %1 = bufferization.to_tensor %arg1 : memref<64x128xf16>
-      %2 = bufferization.to_tensor %arg2 : memref<128x128xf16>
-      %3 = linalg.matmul {appleamx.created} ins(%0, %1 : tensor<128x64xf16>, tensor<64x128xf16>) outs(%2 : tensor<128x128xf16>) -> tensor<128x128xf16>
-      %4 = bufferization.to_memref %3 : memref<128x128xf16>
-      memref.copy %4, %arg2 : memref<128x128xf16> to memref<128x128xf16>
-      return
+    module {
+      func.func @matmul(%arg0: memref<128x64xf16>, %arg1: memref<64x128xf16>, %arg2: memref<128x128xf16>) {
+        linalg.matmul {appleamx.created} ins(%arg0, %arg1 : memref<128x64xf16>, memref<64x128xf16>) outs(%arg2 : memref<128x128xf16>)
+        return
+      }
     }
     ```
   }];
