@@ -12,8 +12,6 @@ configure_lit_site_cfg(
 set(APPLEAMX_TEST_DEPENDS
         FileCheck count not
         appleamx-opt
-        appleamx-translate
-        AppleAMXPlugin
         )
 
 add_lit_testsuite(check-appleamx "Running the appleamx regression tests"

@@ -11,6 +11,7 @@
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/Transforms/Patterns.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/IR/PatternMatch.h"
@@ -66,7 +67,6 @@ public:
     matmulOp->setAttr("appleamx.created", rewriter.getUnitAttr());
 
     Value result = rewriter.create<bufferization::ToMemrefOp>(op.getLoc(), CType, matmulOp.getResult(0));
-
     rewriter.create<memref::CopyOp>(op.getLoc(), result, C);
 
     rewriter.eraseOp(op);
@@ -172,17 +172,29 @@ class AppleAMXTileMatmul
 public:
   using impl::AppleAMXTileMatmulBase<AppleAMXTileMatmul>::AppleAMXTileMatmulBase;
   void runOnOperation() override {
-    mlir::func::FuncOp func = getOperation();
-    mlir::PatternRewriter rewriter(func.getContext());
-    func.walk([&](mlir::linalg::MatmulOp matmulOp) {
-      mlir::linalg::LinalgTilingOptions tilingOptions;
-      tilingOptions.setTileSizes({32, 32, 32});
-      if (succeeded(linalg::tileLinalgOp(rewriter, matmulOp, tilingOptions))) {
-        // The op is replaced inside tileLinalgOp on success
+    func::FuncOp func = getOperation();
+    PatternRewriter rewriter(func.getContext());
+    tileMatmul(rewriter, func, linalg::LinalgTilingOptions().setTileSizes({32, 32, 32}));
+    scfForLoopCanonicalization(func);
+  }
+
+private:
+  void tileMatmul(PatternRewriter &rewriter, func::FuncOp func,
+                  linalg::LinalgTilingOptions tilingOptions) {
+    func.walk([&](linalg::MatmulOp matmulOp) {
+      auto outerTiledOp = linalg::tileLinalgOp(rewriter, matmulOp, tilingOptions);
+      if (failed(outerTiledOp)) {
         return WalkResult::advance();
       }
+      rewriter.replaceOp(matmulOp, outerTiledOp->tensorResults);
       return WalkResult::advance();
     });
+  }
+
+  void scfForLoopCanonicalization(func::FuncOp func) {
+    RewritePatternSet patterns(func.getContext());
+    scf::populateSCFForLoopCanonicalizationPatterns(patterns);
+    (void)applyPatternsAndFoldGreedily(func, std::move(patterns));
   }
 };
 } // namespace
