@@ -24,6 +24,7 @@ int main(int argc, char **argv) {
                   mlir::arith::ArithDialect, mlir::func::FuncDialect,
                   mlir::linalg::LinalgDialect, mlir::memref::MemRefDialect,
                   mlir::affine::AffineDialect, mlir::scf::SCFDialect,
+                  mlir::vector::VectorDialect,
                   mlir::bufferization::BufferizationDialect>();
 
   return mlir::asMainReturnCode(
