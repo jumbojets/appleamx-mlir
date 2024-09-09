@@ -14,11 +14,14 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/Transforms/Patterns.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Vector/Transforms/LoweringPatterns.h"
+#include "mlir/Dialect/Transform/IR/TransformDialect.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Rewrite/FrozenRewritePatternSet.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include <optional>
+#include <iostream>
 
 #include "AppleAMX/Passes.h"
 
@@ -139,8 +142,12 @@ public:
   void runOnOperation() override {
     func::FuncOp func = getOperation();
     PatternRewriter rewriter(func.getContext());
+
     tileMatmul(rewriter, func, linalg::LinalgTilingOptions().setTileSizes({32, 32, 32}));
+    tileMatmul(rewriter, func, linalg::LinalgTilingOptions().setTileSizes({32, 32, 1}));
+    // vectorizeMatmul(rewriter, func);
     scfForLoopCanonicalization(func);
+    removeSingleIterationScfForLoops(func);
   }
 
 private:
@@ -161,6 +168,53 @@ private:
     scf::populateSCFForLoopCanonicalizationPatterns(patterns);
     (void)applyPatternsAndFoldGreedily(func, std::move(patterns));
   }
+
+  void vectorizeMatmul(PatternRewriter &rewriter, func::FuncOp func) {
+    func.walk([&](linalg::MatmulOp matmulOp) {
+      if (!matmulOp->hasAttr("appleamx.created"))
+        return WalkResult::advance();
+
+      // SmallVector<int64_t, 2> vectorSizes{32, 32};
+      // SmallVector<bool, 2> scalableVecDims(2, false);
+
+      SmallVector<int64_t, 2> vectorSizes{};
+      SmallVector<bool, 2> scalableVecDims{};
+
+      if (failed(linalg::vectorize(rewriter, matmulOp, vectorSizes, scalableVecDims, 
+                                   /*vectorizeNDExtract=*/true, 
+                                   /*flatten1DDepthwiseConv=*/false))) {
+        matmulOp.emitError("Failed to vectorize matmul operation");
+        signalPassFailure();
+      }
+
+      RewritePatternSet patterns(func.getContext());
+      vector::VectorTransformsOptions vectorTransformsOptions;
+      vectorTransformsOptions.setVectorTransformsOptions(vector::VectorContractLowering::OuterProduct);
+      vector::populateVectorContractLoweringPatterns(patterns, vectorTransformsOptions);
+      (void)applyPatternsAndFoldGreedily(func, std::move(patterns));
+
+      return WalkResult::advance();
+    });
+  }
+
+  void removeSingleIterationScfForLoops(func::FuncOp func) {
+    func.walk([&](scf::ForOp forOp) {
+      auto lb = forOp.getLowerBound().getDefiningOp<arith::ConstantIndexOp>();
+      auto ub = forOp.getUpperBound().getDefiningOp<arith::ConstantIndexOp>();
+      auto step = forOp.getStep().getDefiningOp<arith::ConstantIndexOp>();
+      if (lb && ub && step && (ub.value() == lb.value() + step.value())) {
+        forOp.getInductionVar().replaceAllUsesWith(lb.getResult());
+        OpBuilder builder(forOp);
+        for (auto &op : forOp.getBody()->getOperations()) {
+          if (!isa<scf::YieldOp>(op)) {
+            builder.clone(op);
+          }
+        }
+        forOp.erase();
+      }
+    });
+  }
+
 };
 } // namespace
 } // namespace mlir::appleamx

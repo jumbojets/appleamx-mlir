@@ -58,7 +58,8 @@ def AppleAMXTileMatmul: Pass<"appleamx-tile-matmul", "::mlir::func::FuncOp"> {
   let dependentDialects = [
     "mlir::func::FuncDialect",
     "mlir::linalg::LinalgDialect",
-    "mlir::scf::SCFDialect"
+    "mlir::scf::SCFDialect",
+    "mlir::vector::VectorDialect"
   ];
 }
 
