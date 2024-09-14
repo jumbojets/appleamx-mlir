@@ -27,6 +27,7 @@
 
 namespace mlir::appleamx {
 #define GEN_PASS_DEF_APPLEAMXRAISEAFFINEMATMUL
+#define GEN_PASS_DEF_APPLEAMXTRANSPOSEMATMUL
 #define GEN_PASS_DEF_APPLEAMXTILEMATMUL
 #include "AppleAMX/Passes.h.inc"
 
@@ -135,6 +136,48 @@ public:
   }
 };
 
+// TODO: this rewrite pattern should ideally work on both buffers and tensors
+// TODO: try to remove the extra allocation. would be nice to do the transpose in place
+struct AppleAMXTransposeMatmulRewriter : public mlir::OpRewritePattern<linalg::MatmulOp> {
+  using OpRewritePattern<linalg::MatmulOp>::OpRewritePattern;
+  
+  LogicalResult matchAndRewrite(linalg::MatmulOp matmulOp, PatternRewriter& rewriter) const override {
+    Value lhs = matmulOp.getInputs()[0];
+    Value rhs = matmulOp.getInputs()[1];
+    Value output = matmulOp.getOutputs()[0];
+
+    auto loc = matmulOp.getLoc();
+
+    auto lhsType = dyn_cast<MemRefType>(lhs.getType());
+    auto rhsType = dyn_cast<MemRefType>(rhs.getType());
+    auto outputType = dyn_cast<MemRefType>(output.getType());
+    if (!lhsType || !rhsType || !outputType)
+      return failure();
+
+    SmallVector<int64_t, 2> permutation = {1, 0};
+    auto transposedType = MemRefType::get({lhsType.getShape()[1], lhsType.getShape()[0]}, lhsType.getElementType(), lhsType.getLayout(), lhsType.getMemorySpace());
+    Value transposedLhs = rewriter.create<memref::AllocOp>(loc, transposedType);
+    rewriter.create<linalg::TransposeOp>(loc, lhs, transposedLhs, permutation);
+
+    auto newMatmulOp = rewriter.create<linalg::MatmulTransposeAOp>(loc, TypeRange{}, ValueRange{transposedLhs, rhs}, ValueRange{output});
+    rewriter.replaceOp(matmulOp, newMatmulOp);
+    return success();
+  }
+};
+
+class AppleAMXTransposeMatmul
+    : public impl::AppleAMXTransposeMatmulBase<AppleAMXTransposeMatmul> {
+public:
+  using impl::AppleAMXTransposeMatmulBase<AppleAMXTransposeMatmul>::AppleAMXTransposeMatmulBase;
+  void runOnOperation() final {
+    RewritePatternSet patterns(&getContext());
+    patterns.add<AppleAMXTransposeMatmulRewriter>(&getContext());
+    FrozenRewritePatternSet patternSet(std::move(patterns));
+    if (failed(applyPatternsAndFoldGreedily(getOperation(), patternSet)))
+      signalPassFailure();
+  }
+};
+
 class AppleAMXTileMatmul
     : public impl::AppleAMXTileMatmulBase<AppleAMXTileMatmul> {
 public:
@@ -144,10 +187,9 @@ public:
     PatternRewriter rewriter(func.getContext());
 
     tileMatmul(rewriter, func, linalg::LinalgTilingOptions().setTileSizes({32, 32, 32}));
-    tileMatmul(rewriter, func, linalg::LinalgTilingOptions().setTileSizes({32, 32, 1}));
-    // vectorizeMatmul(rewriter, func);
+    // tileMatmul(rewriter, func, linalg::LinalgTilingOptions().setTileSizes({32, 32, 1}));
+    vectorizeMatmul(rewriter, func);
     scfForLoopCanonicalization(func);
-    removeSingleIterationScfForLoops(func);
   }
 
 private:
@@ -163,29 +205,25 @@ private:
     });
   }
 
-  void scfForLoopCanonicalization(func::FuncOp func) {
-    RewritePatternSet patterns(func.getContext());
-    scf::populateSCFForLoopCanonicalizationPatterns(patterns);
-    (void)applyPatternsAndFoldGreedily(func, std::move(patterns));
-  }
-
   void vectorizeMatmul(PatternRewriter &rewriter, func::FuncOp func) {
     func.walk([&](linalg::MatmulOp matmulOp) {
       if (!matmulOp->hasAttr("appleamx.created"))
         return WalkResult::advance();
 
-      // SmallVector<int64_t, 2> vectorSizes{32, 32};
-      // SmallVector<bool, 2> scalableVecDims(2, false);
-
       SmallVector<int64_t, 2> vectorSizes{};
       SmallVector<bool, 2> scalableVecDims{};
 
       if (failed(linalg::vectorize(rewriter, matmulOp, vectorSizes, scalableVecDims, 
-                                   /*vectorizeNDExtract=*/true, 
+                                   /*vectorizeNDExtract=*/false,
                                    /*flatten1DDepthwiseConv=*/false))) {
         matmulOp.emitError("Failed to vectorize matmul operation");
         signalPassFailure();
       }
+
+      RewritePatternSet lowerToContractPatterns(func.getContext());
+      vector::populateVectorReductionToContractPatterns(lowerToContractPatterns);
+      vector::populateVectorTransferPermutationMapLoweringPatterns(lowerToContractPatterns);
+      (void)applyPatternsAndFoldGreedily(func, std::move(lowerToContractPatterns));
 
       RewritePatternSet patterns(func.getContext());
       vector::VectorTransformsOptions vectorTransformsOptions;
@@ -197,7 +235,12 @@ private:
     });
   }
 
-  void removeSingleIterationScfForLoops(func::FuncOp func) {
+  void scfForLoopCanonicalization(func::FuncOp func) {
+    RewritePatternSet patterns(func.getContext());
+    scf::populateSCFForLoopCanonicalizationPatterns(patterns);
+    (void)applyPatternsAndFoldGreedily(func, std::move(patterns));
+
+    // remove single iteration for loop
     func.walk([&](scf::ForOp forOp) {
       auto lb = forOp.getLowerBound().getDefiningOp<arith::ConstantIndexOp>();
       auto ub = forOp.getUpperBound().getDefiningOp<arith::ConstantIndexOp>();

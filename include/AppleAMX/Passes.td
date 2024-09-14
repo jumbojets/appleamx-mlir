@@ -49,6 +49,17 @@ def AppleAMXRaiseAffineMatmul: Pass<"appleamx-raise-affine-matmul", "::mlir::Mod
   ];
 }
 
+def AppleAMXTransposeMatmul: Pass<"appleamx-transpose-matmul", "::mlir::func::FuncOp"> {
+  let summary = "Transposes the left operand and inserts a transposed matmul for better access pattern";
+  let description = [{
+    Transposes matmul
+  }];
+  let dependentDialects = [
+    "mlir::linalg::LinalgDialect",
+    "::mlir::bufferization::BufferizationDialect" 
+  ];
+}
+
 def AppleAMXTileMatmul: Pass<"appleamx-tile-matmul", "::mlir::func::FuncOp"> {
   let summary = "Tiles matmuls";
   let description = [{
