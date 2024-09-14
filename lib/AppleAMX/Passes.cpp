@@ -136,7 +136,6 @@ public:
   }
 };
 
-// TODO: this rewrite pattern should ideally work on both buffers and tensors
 // TODO: try to remove the extra allocation. would be nice to do the transpose in place
 struct AppleAMXTransposeMatmulRewriter : public mlir::OpRewritePattern<linalg::MatmulOp> {
   using OpRewritePattern<linalg::MatmulOp>::OpRewritePattern;
@@ -160,6 +159,7 @@ struct AppleAMXTransposeMatmulRewriter : public mlir::OpRewritePattern<linalg::M
     rewriter.create<linalg::TransposeOp>(loc, lhs, transposedLhs, permutation);
 
     auto newMatmulOp = rewriter.create<linalg::MatmulTransposeAOp>(loc, TypeRange{}, ValueRange{transposedLhs, rhs}, ValueRange{output});
+    newMatmulOp->setAttr("appleamx.created", rewriter.getUnitAttr());
     rewriter.replaceOp(matmulOp, newMatmulOp);
     return success();
   }
@@ -187,7 +187,7 @@ public:
     PatternRewriter rewriter(func.getContext());
 
     tileMatmul(rewriter, func, linalg::LinalgTilingOptions().setTileSizes({32, 32, 32}));
-    // tileMatmul(rewriter, func, linalg::LinalgTilingOptions().setTileSizes({32, 32, 1}));
+    tileMatmul(rewriter, func, linalg::LinalgTilingOptions().setTileSizes({32, 32, 1}));
     vectorizeMatmul(rewriter, func);
     scfForLoopCanonicalization(func);
   }
@@ -195,7 +195,7 @@ public:
 private:
   void tileMatmul(PatternRewriter &rewriter, func::FuncOp func,
                   linalg::LinalgTilingOptions tilingOptions) {
-    func.walk([&](linalg::MatmulOp matmulOp) {
+    func.walk([&](linalg::MatmulTransposeAOp matmulOp) {
       auto outerTiledOp = linalg::tileLinalgOp(rewriter, matmulOp, tilingOptions);
       if (failed(outerTiledOp)) {
         return WalkResult::advance();
@@ -206,7 +206,7 @@ private:
   }
 
   void vectorizeMatmul(PatternRewriter &rewriter, func::FuncOp func) {
-    func.walk([&](linalg::MatmulOp matmulOp) {
+    func.walk([&](linalg::MatmulTransposeAOp matmulOp) {
       if (!matmulOp->hasAttr("appleamx.created"))
         return WalkResult::advance();
 

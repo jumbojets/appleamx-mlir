@@ -37,3 +37,11 @@ cmake -G Ninja .. \
 ninja
 ninja check-applemax
 ```
+
+### TODO
+
+- [ ] get MVP working
+- [ ] find different home for the raise affine matmul stuff
+- [ ] make some higher level constructors work for both buffers and tensors
+- [ ] flesh out entire dialect
+- [ ] high-level Apple AMX optimizations
