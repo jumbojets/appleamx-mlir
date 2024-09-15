@@ -38,6 +38,12 @@ ninja
 ninja check-applemax
 ```
 
+### References
+- https://www.jeremykun.com/2023/09/11/mlir-folders/
+- https://polygeist.llvm.org/getting_started/Use_Polygeist/
+- https://discourse.llvm.org/t/help-lowering-linalg-matmul-to-vector-outer-product/81238
+- https://github.com/llvm/llvm-project/blob/main/mlir/test/Integration/Dialect/Linalg/CPU/ArmSME/matmul.mlir
+
 ### TODO
 
 - [ ] get MVP working
